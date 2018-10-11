@@ -16,15 +16,17 @@ K.set_image_dim_ordering('tf')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--kbit', type=int, default=13, help='Bits of numbers to detect')
+parser.add_argument('--mask', type=int, default=0, help="Masked Bits (with 0) in numbers")
 parser.add_argument('--split_ratio', type=float, default=0.67, help="Ratio of train/test split")
 parser.add_argument('--batch_size', type=int, default=16, help='Batch size during training [default: 16]')
-parser.add_argument('--num_epoch', type=int, default=30, help='Batch size during training [default: 30]')
+parser.add_argument('--num_epoch', type=int, default=300, help='Batch size during training [default: 30]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 parser.add_argument('--decay_rate', type=float, default=1e-6, help='Decay rate [default: 1e-6]')
 parser.add_argument('--log_dir', type=str, default="", help="The path of training log (saving directory)")
 
 FLAGS = parser.parse_args()
 kbit = FLAGS.kbit
+mask = FLAGS.mask
 split_ratio = FLAGS.split_ratio
 batch_size = FLAGS.batch_size
 nb_epoch = FLAGS.num_epoch
@@ -61,14 +63,7 @@ def shuffle_data(data, labels):
     return data[idx, ...], labels[idx], idx
 
 
-def load_inputs(n = 3, split_ratio = 0.67):
-    """ Generate all numbers of size n bits.
-        Input:
-            n: bit size (generated numbers)
-            split_ratio: train/test split
-        Return:
-            (X_train, Y_train), (X_test, Y_test)
-    """
+def load_data(n = 13):
     bits = list(kbits(n))
     bits_string = ''.join(bits)
     bits_mat = (np.array(map(int, list(bits_string))).reshape(-1, n))
@@ -78,6 +73,19 @@ def load_inputs(n = 3, split_ratio = 0.67):
     Y = np_utils.to_categorical(Y, 2)
 
     X, Y, _ = shuffle_data(X, Y)
+
+    return X, Y
+
+
+def load_inputs(n = 13, split_ratio = 0.67):
+    """ Generate all numbers of size n bits.
+        Input:
+            n: bit size (generated numbers)
+            split_ratio: train/test split
+        Return:
+            (X_train, Y_train), (X_test, Y_test)
+    """
+    X, Y = load_data(n=n)
     split = int(split_ratio * 2**n)
     X_train, Y_train = X[0:split], Y[0:split]
     X_test, Y_test = X[split:], Y[split:]
@@ -85,9 +93,28 @@ def load_inputs(n = 3, split_ratio = 0.67):
     print ("Test:", X_test.shape, Y_test.shape)
     print ("Total:", 2**n)
     print ("Ratio:", split_ratio)
+    # print (X_train)
+    # print (Y_train)
 
-    print (X_train)
-    print (Y_train)
+    return (X_train, Y_train), (X_test, Y_test)
+
+
+def load_inputs_masked(n = 13, mask = 2):
+    X_test, Y_test = load_data(n=n)
+    bits = list(kbits(n - mask))
+    zeros = mask * "0"
+    bits_string = zeros.join(bits)
+    bits_string = zeros + bits_string
+    bits_mat = (np.array(map(int, list(bits_string))).reshape(-1, n))
+    X_train = bits_mat
+    Y_train = np.array([0, 1] * 2**(n - mask - 1)).reshape(2** (n - mask), -1)
+    Y_train = np_utils.to_categorical(Y_train, 2)
+
+    X_train, Y_train, _ = shuffle_data(X_train, Y_train)
+    print ("Train:", X_train.shape, Y_train.shape)
+    print ("Test:", X_test.shape, Y_test.shape)
+    # print (X_train)
+    # print (Y_train)
 
     return (X_train, Y_train), (X_test, Y_test)
 
@@ -125,7 +152,12 @@ def kbits(n):
 
 
 def train_keras():
-    (X_train, Y_train), (X_test, Y_test) = load_inputs(kbit, split_ratio)
+    if mask == 0:
+        print ("No masking!")
+        (X_train, Y_train), (X_test, Y_test) = load_inputs(kbit, split_ratio)
+    else:
+        print ("Masking: " + str(mask))
+        (X_train, Y_train), (X_test, Y_test) = load_inputs_masked(kbit, mask)
     model = build_model(kbit, 1)
     model.summary()
     filepath = os.path.join(log_dir, "weights.hdf5")
@@ -142,7 +174,7 @@ def train_keras():
 def train_tf():
     # TODO
     # (X_train, Y_train), (X_test, Y_test) = load_inputs(kbit, split_ratio)
-    
+
     # y = tf.placeholder(tf.int32, [None])
     # x = tf.placeholder(tf.int32, [None, kbit])
 
@@ -164,7 +196,7 @@ def train_tf():
     # optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate,
     #                                       momenum=0.9, use_nesterov=True)
     # train_op = optimizer.minimize(loss, global_step=global_step)
-    
+
     pass
 
 
